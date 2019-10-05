@@ -91,13 +91,9 @@ int main() {
 	// "http://www.effigis.com/wp-content/uploads/2015/02/Airbus_Pleiades_50cm_8bit_RGB_Yogyakarta.jpg"
 
 	char buffer[BUFFER_SIZE];
-
 	string url, * pathAndDomain;
-
 	const char* domain, * path;
-
 	int sock;
-
 	struct hostent* he;
 
 	struct sockaddr_in server_addr;
@@ -122,7 +118,6 @@ int main() {
 			if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) throw string("socket");
 
 			if ((he = gethostbyname(domain)) == NULL) throw string("gethostbyname");
-
 			server_addr.sin_addr = *((struct in_addr*) he->h_addr);
 
 			if (connect(sock, (struct sockaddr*) & server_addr, sizeof(struct sockaddr)) == -1) throw string("connect");
@@ -131,7 +126,6 @@ int main() {
 			if (send(sock, buffer, strlen(buffer), 0) == -1) throw string("send");
 
 			if (getStatus(sock) != STATUS_OK) throw string("readHttpStatus");
-
 			_beginthread(&donwloadImage, 0, (void*)sock);
 		}
 		catch (string error) {
