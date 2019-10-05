@@ -1,7 +1,5 @@
 // OS Lab 3.cpp : Defines the entry point for the console application.
 //
-
-#include "stdafx.h"
 #include "winsock2.h"
 #pragma comment(lib, "Ws2_32.lib") 
 #include <iostream> 
@@ -10,6 +8,7 @@
 #include <Windows.h>
 #include <process.h>
 #include <conio.h>
+
 using namespace std;
 
 #define BUFFER_SIZE 1024 * 256
@@ -32,7 +31,7 @@ string * getPathAndDomain(string inputString) {
 }
 
 int getContentLength(int sock) {
-	char buff[BUFFER_SIZE], *ptr = buff + 4;
+	char buff[BUFFER_SIZE], * ptr = buff + 4;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return -1;
@@ -43,14 +42,14 @@ int getContentLength(int sock) {
 	ptr = buff + 4;
 	if (bytes_received) {
 		ptr = strstr(ptr, "Content-Length:");
-		if (ptr) sscanf(ptr, "%*s %d", &bytes_received);
+		if (ptr) sscanf(ptr, "%*s%d", &bytes_received);
 		else bytes_received = 0;
 	}
 	return bytes_received;
 }
 
 int getStatus(int sock) {
-	char buff[BUFFER_SIZE], *ptr = buff + 1;
+	char buff[BUFFER_SIZE], * ptr = buff + 1;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return -1;
@@ -59,7 +58,7 @@ int getStatus(int sock) {
 	}
 	*ptr = 0;
 	ptr = buff + 1;
-	sscanf(ptr, "%*s %d ", &status);
+	sscanf(ptr, "%*s%d", &status);
 	return (bytes_received > 0) ? status : 0;
 }
 
@@ -69,7 +68,7 @@ void donwloadImage(void* socket) {
 	int bytes = 0, bytes_received;
 	char buffer[BUFFER_SIZE];
 	if (contentLengh) {
-		FILE* fd = fopen(string("test" + to_string(sock) + ".jpg").c_str(), "wb");
+		FILE* fd = fopen(("test" + to_string(sock) + "_" + to_string((rand() % 1000)) + ".jpg").c_str(), "wb");
 		while ((bytes_received = recv(sock, buffer, BUFFER_SIZE, 0))) {
 			fwrite(buffer, 1, bytes_received, fd);
 			bytes += bytes_received;
@@ -92,15 +91,21 @@ int main() {
 	// "http://www.effigis.com/wp-content/uploads/2015/02/Airbus_Pleiades_50cm_8bit_RGB_Yogyakarta.jpg"
 
 	char buffer[BUFFER_SIZE];
-	string url, *pathAndDomain;
-	const char *domain, *path;
+
+	string url, * pathAndDomain;
+
+	const char* domain, * path;
+
 	int sock;
-	struct hostent *he;
+
+	struct hostent* he;
+
 	struct sockaddr_in server_addr;
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(80);
 
-	if (WSAStartup(MAKEWORD(2, 2), (WSADATA *)&buffer[0])) {
+	WSADATA wsadata;
+	if (WSAStartup(MAKEWORD(2, 2), &wsadata)) {
 		cout << "Error in 'WSAStartup' function: " << WSAGetLastError() << endl;
 		return -1;
 	}
@@ -108,18 +113,26 @@ int main() {
 		cout << "Enter image URL ('q' for exit): ";
 		getline(cin, url);
 		if (url == "q") break;
+
 		pathAndDomain = getPathAndDomain(url);
 		domain = pathAndDomain[0].c_str();
 		path = pathAndDomain[1].c_str();
+
 		try {
 			if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) throw string("socket");
+
 			if ((he = gethostbyname(domain)) == NULL) throw string("gethostbyname");
-			server_addr.sin_addr = *((struct in_addr *) he->h_addr);
-			if (connect(sock, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) == -1) throw string("connect");
+
+			server_addr.sin_addr = *((struct in_addr*) he->h_addr);
+
+			if (connect(sock, (struct sockaddr*) & server_addr, sizeof(struct sockaddr)) == -1) throw string("connect");
+
 			snprintf(buffer, sizeof(buffer), "GET /%s HTTP/1.1\r\nHost: %s\r\n\r\n", path, domain);
 			if (send(sock, buffer, strlen(buffer), 0) == -1) throw string("send");
+
 			if (getStatus(sock) != STATUS_OK) throw string("readHttpStatus");
-			_beginthread(&donwloadImage, 0, (void *)sock);
+
+			_beginthread(&donwloadImage, 0, (void*)sock);
 		}
 		catch (string error) {
 			cout << "Error in '" << error << "' function: " << WSAGetLastError() << endl;
