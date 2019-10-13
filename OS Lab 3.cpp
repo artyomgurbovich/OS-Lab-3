@@ -15,24 +15,21 @@ using namespace std;
 #define STATUS_OK 200
 #define FILTER_LENGTH 3
 
-string * getPathAndDomain(string inputString) {
-	string* returnString = new string[2];
+void getPathAndDomain(string* inputString, string* domain, string* path) {
 	string filter[FILTER_LENGTH] = { "https://", "http://", "www." };
 	size_t pos;
 	for (int i = 0; i < FILTER_LENGTH; i++) {
-		pos = inputString.find(filter[i]);
-		if (pos != string::npos) inputString.erase(pos, filter[i].length());
+		pos = (*inputString).find(filter[i]);
+		if (pos != string::npos) (*inputString).erase(pos, filter[i].length());
 	}
-	pos = inputString.find('/');
-	returnString[0] = inputString.substr(0, pos);
-	returnString[1] = inputString.substr(pos + 1);
-	return returnString;
-	delete[] returnString;
+	pos = (*inputString).find('/');
+	*domain = (*inputString).substr(0, pos);
+	*path = (*inputString).substr(pos + 1);
 }
 
 int getContentLength(int sock) {
 	char buff[BUFFER_SIZE], * ptr = buff + 4;
-	int bytes_received, status;
+	int bytes_received;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return -1;
 		if ((ptr[-3] == '\r') && (ptr[-2] == '\n') && (ptr[-1] == '\r') && (*ptr == '\n')) break;
@@ -91,9 +88,11 @@ int main() {
 	// "http://www.effigis.com/wp-content/uploads/2015/02/Airbus_Pleiades_50cm_8bit_RGB_Yogyakarta.jpg"
 
 	char buffer[BUFFER_SIZE];
-	string url, * pathAndDomain;
-	const char* domain, * path;
+
+	string url, domain, path;
+
 	int sock;
+
 	struct hostent* he;
 
 	struct sockaddr_in server_addr;
@@ -110,22 +109,22 @@ int main() {
 		getline(cin, url);
 		if (url == "q") break;
 
-		pathAndDomain = getPathAndDomain(url);
-		domain = pathAndDomain[0].c_str();
-		path = pathAndDomain[1].c_str();
+		getPathAndDomain(&url, &domain, &path);
 
 		try {
 			if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) throw string("socket");
 
-			if ((he = gethostbyname(domain)) == NULL) throw string("gethostbyname");
+			if ((he = gethostbyname(domain.c_str())) == NULL) throw string("gethostbyname");
+
 			server_addr.sin_addr = *((struct in_addr*) he->h_addr);
 
 			if (connect(sock, (struct sockaddr*) & server_addr, sizeof(struct sockaddr)) == -1) throw string("connect");
 
-			snprintf(buffer, sizeof(buffer), "GET /%s HTTP/1.1\r\nHost: %s\r\n\r\n", path, domain);
+			snprintf(buffer, sizeof(buffer), "GET /%s HTTP/1.1\r\nHost: %s\r\n\r\n", path.c_str(), domain.c_str());
 			if (send(sock, buffer, strlen(buffer), 0) == -1) throw string("send");
 
 			if (getStatus(sock) != STATUS_OK) throw string("readHttpStatus");
+
 			_beginthread(&donwloadImage, 0, (void*)sock);
 		}
 		catch (string error) {
