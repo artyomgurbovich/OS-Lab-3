@@ -1,7 +1,6 @@
 // OSSelect.cpp : Defines the entry point for the console application.
 //
 
-#include "stdafx.h"
 #include "winsock2.h"
 #pragma comment(lib, "Ws2_32.lib") 
 #include <iostream> 
@@ -35,7 +34,7 @@ void getPathAndDomain(string* inputString, string* domain, string* path) {
 }
 
 int getContentLength(int sock) {
-	char buff[BUFFER_SIZE], *ptr = buff + 4;
+	char buff[BUFFER_SIZE], * ptr = buff + 4;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return 0;
@@ -53,7 +52,7 @@ int getContentLength(int sock) {
 }
 
 int getStatus(int sock) {
-	char buff[BUFFER_SIZE], *ptr = buff + 1;
+	char buff[BUFFER_SIZE], * ptr = buff + 1;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return -1;
@@ -99,7 +98,6 @@ void manageSockets(void* data) {
 				}
 				fclose(fd);
 				contentLengh -= bytes;
-				cout << "(Receive " << bytes << " bytes, " << contentLengh << " bytes left)" << endl << endl;
 				fprintf(logger, "(Receive %d bytes, %d bytes left)\n\n", bytes, contentLengh);
 				if (contentLengh == 0) {
 					closesocket(socket);
@@ -110,11 +108,11 @@ void manageSockets(void* data) {
 				}
 				else {
 					master_map.at(socket) = contentLengh;
-					++it;
+					it++;
 				}
 			}
 			else {
-				++it;
+				it++;
 			}
 		}
 	}
@@ -158,10 +156,10 @@ int main()
 	}
 
 	string url, domain, path;
-	
+
 	FD_ZERO(&master_set);
 	_beginthread(&manageSockets, 0, 0);
-	
+
 	while (true) {
 		cout << "Enter image URL ('q' for exit): ";
 		getline(cin, url);
