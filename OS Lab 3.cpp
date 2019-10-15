@@ -1,6 +1,7 @@
 // OSSelect.cpp : Defines the entry point for the console application.
 //
 
+#include "stdafx.h"
 #include "winsock2.h"
 #pragma comment(lib, "Ws2_32.lib") 
 #include <iostream> 
@@ -17,6 +18,10 @@ using namespace std;
 #define STATUS_OK 200
 #define FILTER_LENGTH 3
 
+fd_set master_set, working_set;
+map<int, int> master_map, working_map;
+int isWorking = 1;
+
 void getPathAndDomain(string* inputString, string* domain, string* path) {
 	string filter[FILTER_LENGTH] = { "https://", "http://", "www." };
 	size_t pos;
@@ -30,7 +35,7 @@ void getPathAndDomain(string* inputString, string* domain, string* path) {
 }
 
 int getContentLength(int sock) {
-	char buff[BUFFER_SIZE], * ptr = buff + 4;
+	char buff[BUFFER_SIZE], *ptr = buff + 4;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return 0;
@@ -48,7 +53,7 @@ int getContentLength(int sock) {
 }
 
 int getStatus(int sock) {
-	char buff[BUFFER_SIZE], * ptr = buff + 1;
+	char buff[BUFFER_SIZE], *ptr = buff + 1;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return -1;
@@ -61,103 +66,59 @@ int getStatus(int sock) {
 	return (bytes_received > 0) ? status : 0;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-fd_set master_set, working_set;
-map<int, int> master_map, working_map;
-int isWorking = 1;
-
-//  master_map.insert(pair<int, int>(451, 102040));
-//  auto it = master_map.begin();
-//  while (it != master_map.end()) {
-//  	if (it == prev(master_map.end())) {
-//  		cout << "last" << endl;
-//  	}
-//  	master_map.erase(451);
-//  	it = master_map.begin();
-//  	cout << "hello" << endl;
-//  }
-
 void manageSockets(void* data) {
 	int c;
 	struct timeval timeout;
 	timeout.tv_sec = 60;
 	timeout.tv_usec = 0;
+	FILE* logger = fopen("logger.txt", "w");
 	while (isWorking) {
-		Sleep(500);
 		memcpy(&working_set, &master_set, sizeof(master_set));
 		memcpy(&working_map, &master_map, sizeof(master_map));
 		c = select(0, &working_set, NULL, NULL, &timeout);
 		if (c < 1) continue;
 		for (auto it = working_map.begin(); it != working_map.end(); ) {
 			int socket = (*it).first, contentLengh = (*it).second;
-			cout << "start    " << socket << "    " << contentLengh << endl;
 			if (FD_ISSET(socket, &working_set)) {
-				cout << "socket    " << socket << "  ISSET  " << endl;
+				fprintf(logger, "Start working with %d socket. (%d bytes left)\n", socket, contentLengh);
 				int bytes = 0, bytes_received;
 				char buffer[BUFFER_SIZE];
 				FILE* fd = fopen(("image" + to_string(socket) + ".jpg").c_str(), "ab");
 				while (true) {
 					bytes_received = recv(socket, buffer, BUFFER_SIZE, 0);
-					cout << socket << " recv1 " << bytes_received << endl;
 					if (bytes_received < 0) {
-						cout << socket << " stop " << endl;
+						fprintf(logger, "Stop working with %d socket. ", socket);
 						break;
 					}
 					fwrite(buffer, 1, bytes_received, fd);
 					bytes += bytes_received;
-					cout << socket << " recv2 " << bytes_received << "  B =  " << bytes << "  L =  " << contentLengh << endl;
-					if (bytes == contentLengh) break;
+					if (bytes == contentLengh) {
+						fprintf(logger, "End working with %d socket. ", socket);
+						break;
+					}
 				}
-
-
-
-				//working_map.insert(pair<int, int>(11, 1024));
-				//working_map.insert(pair<int, int>(22, 2048));
-				//working_map.insert(pair<int, int>(33, 4096));
-				//for (auto it = working_map.begin(); it != working_map.end(); ) {
-				//	int socket = (*it).first, contentLengh = (*it).second;
-				//
-				//	if (it == working_map.begin()) {
-				//		cout << "start" << endl;
-				//		it++;
-				//		working_map.erase(11);
-				//	}
-				//	else {
-				//		it++;
-				//	}
-				//
-				//	cout << socket << " " << contentLengh << endl;
-				//}
-
-
-
-
-
 				fclose(fd);
 				contentLengh -= bytes;
-				cout << "3    end " << contentLengh << endl;
+				cout << "(Receive " << bytes << " bytes, " << contentLengh << " bytes left)" << endl << endl;
+				fprintf(logger, "(Receive %d bytes, %d bytes left)\n\n", bytes, contentLengh);
 				if (contentLengh == 0) {
-					cout << "4.1 contentLengh == 0 " << endl;
 					closesocket(socket);
-					cout << "4.1 closesocket " << endl;
 					FD_CLR(socket, &master_set);
-					cout << "4.1 FD_CLR " << endl;
 					it++;
-					cout << "4.1 it++ done " << endl;
 					master_map.erase(socket);
-					cout << "4.1 master_map erase done " << endl;
 					working_map.erase(socket);
-					cout << "4.1 working_map erase done (all done)" << endl;
 				}
 				else {
 					master_map.at(socket) = contentLengh;
-					cout << "4.2 change done " << endl;
 					++it;
-					cout << "4.2 ++it done " << endl;
 				}
+			}
+			else {
+				++it;
 			}
 		}
 	}
+	fclose(logger);
 	_endthread();
 }
 
@@ -197,20 +158,20 @@ int main()
 	}
 
 	string url, domain, path;
-
+	
 	FD_ZERO(&master_set);
 	_beginthread(&manageSockets, 0, 0);
-
+	
 	while (true) {
 		cout << "Enter image URL ('q' for exit): ";
 		getline(cin, url);
 		if (url == "q") break;
 		else if (url == "t") {
-			downloadImage("localhost", "image.jpg");
-			downloadImage("localhost", "image.jpg");
-			downloadImage("localhost", "image.jpg");
-			downloadImage("localhost", "image.jpg");
-			downloadImage("localhost", "image.jpg");
+			downloadImage("cdn.hasselblad.com", "samples/x1d-II-50c/x1d-II-sample-01.jpg");
+			downloadImage("cdn.hasselblad.com", "samples/x1d-II-50c/x1d-II-sample-01.jpg");
+			downloadImage("cdn.hasselblad.com", "samples/x1d-II-50c/x1d-II-sample-01.jpg");
+			downloadImage("cdn.hasselblad.com", "samples/x1d-II-50c/x1d-II-sample-01.jpg");
+			downloadImage("cdn.hasselblad.com", "samples/x1d-II-50c/x1d-II-sample-01.jpg");
 		}
 		else {
 			getPathAndDomain(&url, &domain, &path);
