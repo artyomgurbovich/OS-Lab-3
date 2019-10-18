@@ -1,25 +1,26 @@
 // OSSelect.cpp : Defines the entry point for the console application.
 //
 
-#include "winsock2.h"
-#pragma comment(lib, "Ws2_32.lib") 
-#include <iostream> 
-#include <string> 
-#include <thread>
-#include <Windows.h>
+#include "stdafx.h"
+#include "Winsock2.h"
+#include <string>
+#include <windows.h>
 #include <process.h>
-#include <conio.h>
+#include <iostream>
 #include <map>
+#include <conio.h>
+#pragma comment(lib, "Ws2_32.lib") 
 
 using namespace std;
 
-#define BUFFER_SIZE 1024 * 256
+#define BUFFER_SIZE 1024
 #define STATUS_OK 200
 #define FILTER_LENGTH 3
 
+int isWorking = 1;
 fd_set master_set, working_set;
 map<int, int> master_map, working_map;
-int isWorking = 1;
+CRITICAL_SECTION cs;
 
 void getPathAndDomain(string* inputString, string* domain, string* path) {
 	string filter[FILTER_LENGTH] = { "https://", "http://", "www." };
@@ -34,7 +35,7 @@ void getPathAndDomain(string* inputString, string* domain, string* path) {
 }
 
 int getContentLength(int sock) {
-	char buff[BUFFER_SIZE], * ptr = buff + 4;
+	char buff[BUFFER_SIZE], *ptr = buff + 4;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return 0;
@@ -52,7 +53,7 @@ int getContentLength(int sock) {
 }
 
 int getStatus(int sock) {
-	char buff[BUFFER_SIZE], * ptr = buff + 1;
+	char buff[BUFFER_SIZE], *ptr = buff + 1;
 	int bytes_received, status;
 	while (bytes_received = recv(sock, ptr, 1, 0)) {
 		if (bytes_received == -1) return -1;
@@ -72,10 +73,13 @@ void manageSockets(void* data) {
 	timeout.tv_usec = 0;
 	FILE* logger = fopen("logger.txt", "w");
 	while (isWorking) {
+		EnterCriticalSection(&cs);
 		memcpy(&working_set, &master_set, sizeof(master_set));
 		memcpy(&working_map, &master_map, sizeof(master_map));
+		LeaveCriticalSection(&cs);
 		c = select(0, &working_set, NULL, NULL, &timeout);
 		if (c < 1) continue;
+		fprintf(logger, "-------- %d sockets availables --------\n", c);
 		for (auto it = working_map.begin(); it != working_map.end(); ) {
 			int socket = (*it).first, contentLengh = (*it).second;
 			if (FD_ISSET(socket, &working_set)) {
@@ -83,12 +87,12 @@ void manageSockets(void* data) {
 				int bytes = 0, bytes_received;
 				char buffer[BUFFER_SIZE];
 				FILE* fd = fopen(("image" + to_string(socket) + ".jpg").c_str(), "ab");
-				while (true) {
-					bytes_received = recv(socket, buffer, BUFFER_SIZE, 0);
-					if (bytes_received < 0) {
-						fprintf(logger, "Stop working with %d socket. ", socket);
-						break;
-					}
+				bytes_received = recv(socket, buffer, BUFFER_SIZE, 0);
+				if (bytes_received < 0) {
+					fprintf(logger, "Stop working with %d socket. ", socket);
+					break;
+				}
+				else {
 					fwrite(buffer, 1, bytes_received, fd);
 					bytes += bytes_received;
 					if (bytes == contentLengh) {
@@ -96,9 +100,11 @@ void manageSockets(void* data) {
 						break;
 					}
 				}
+				fflush(logger);
 				fclose(fd);
 				contentLengh -= bytes;
 				fprintf(logger, "(Receive %d bytes, %d bytes left)\n\n", bytes, contentLengh);
+				EnterCriticalSection(&cs);
 				if (contentLengh == 0) {
 					closesocket(socket);
 					FD_CLR(socket, &master_set);
@@ -110,6 +116,7 @@ void manageSockets(void* data) {
 					master_map.at(socket) = contentLengh;
 					it++;
 				}
+				LeaveCriticalSection(&cs);
 			}
 			else {
 				it++;
@@ -139,8 +146,10 @@ void downloadImage(const char* domain, const char* path) {
 		int contentLengh = getContentLength(sock);
 		if (contentLengh == 0) throw string("getContentLength");
 		ioctlsocket(sock, FIONBIO, (unsigned long*)& on);
+		EnterCriticalSection(&cs);
 		FD_SET(sock, &master_set);
 		master_map.insert(pair<int, int>(sock, contentLengh));
+		LeaveCriticalSection(&cs);
 	}
 	catch (string error) {
 		cout << "Error in '" << error << "' function: " << WSAGetLastError() << endl;
@@ -149,6 +158,8 @@ void downloadImage(const char* domain, const char* path) {
 
 int main()
 {
+	InitializeCriticalSection(&cs);
+
 	WSADATA wsadata;
 	if (WSAStartup(MAKEWORD(2, 2), &wsadata)) {
 		cout << "Error in 'WSAStartup' function: " << WSAGetLastError() << endl;
@@ -161,7 +172,7 @@ int main()
 	_beginthread(&manageSockets, 0, 0);
 
 	while (true) {
-		cout << "Enter image URL ('q' for exit): ";
+		cout << "Enter image URL ('t' for test): ";
 		getline(cin, url);
 		if (url == "q") break;
 		else if (url == "t") {
@@ -180,6 +191,7 @@ int main()
 	isWorking = 0;
 	cout << "Press any key to exit...";
 	_getch();
+	DeleteCriticalSection(&cs);
 	WSACleanup();
 	return 0;
 }
